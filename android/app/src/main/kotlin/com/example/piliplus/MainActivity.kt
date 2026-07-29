@@ -21,6 +21,11 @@ class MainActivity : AudioServiceActivity() {
             window.attributes.layoutInDisplayCutoutMode =
                 LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
+        // Workaround: Flutter PlatformPlugin skips setStatusBarColor on SDK 35+
+        // due to an incorrect API guard. Set transparent here as fallback.
+        if (Build.VERSION.SDK_INT >= 35) {
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+        }
     }
 
     override fun onDestroy() {

@@ -450,7 +450,7 @@ class PlPlayerController with BlockConfigMixin {
       return;
     }
     _subtitleCues = _SubtitleCue.parse(data);
-    _updateExternalSubtitle(position);
+    _updateExternalSubtitle(Duration(seconds: position.value));
   }
 
   void _updateExternalSubtitle(Duration position) {
@@ -1288,7 +1288,7 @@ class PlPlayerController with BlockConfigMixin {
         }
         if (status == PlayerStatus.playing) {
           WakelockPlus.enable();
-          if (_shouldSetPip) {
+          if (_isAutoEnterPip) {
             if (_isCurrVideoPage) {
               enterPip(autoEnter: true);
             } else {
@@ -2083,6 +2083,7 @@ class PlPlayerController with BlockConfigMixin {
       );
       return;
     }
+    final pngBytes = bytes;
     SmartDialog.showToast('点击弹窗保存截图');
     final time = DurationUtils.formatDuration(
       positionInMilliseconds / 1000,
@@ -2093,7 +2094,7 @@ class PlPlayerController with BlockConfigMixin {
         onTap: () {
           Get.back();
           ImageUtils.saveByteImg(
-            bytes: bytes,
+            bytes: pngBytes,
             fileName: 'screenshot_${cid}_$time',
           );
         },
@@ -2114,7 +2115,7 @@ class PlPlayerController with BlockConfigMixin {
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(5),
-                  child: Image.memory(bytes),
+                  child: Image.memory(pngBytes),
                 ),
               ),
             ),

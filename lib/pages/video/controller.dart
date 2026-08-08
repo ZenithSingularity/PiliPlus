@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' show min;
 import 'dart:ui';
 
@@ -59,7 +60,9 @@ import 'package:PiliPlus/utils/extension/nested_scroll_ext.dart';
 import 'package:PiliPlus/utils/extension/num_ext.dart';
 import 'package:PiliPlus/utils/extension/size_ext.dart';
 import 'package:PiliPlus/utils/page_utils.dart';
+import 'package:PiliPlus/utils/path_utils.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
+import 'package:path/path.dart' as path;
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:PiliPlus/utils/theme_utils.dart';
@@ -713,6 +716,8 @@ class VideoDetailController extends GetxController
   }
 
   Future<void> playerInit({
+    String? video,
+    String? audio,
     bool? autoplay,
     bool autoFullScreenFlag = false,
   }) async {
@@ -728,8 +733,9 @@ class VideoDetailController extends GetxController
               hasDashAudio: entry.hasDashAudio,
             )
           : NetworkSource(
-              videoSource: videoUrl!,
-              audioSource: audioUrl,
+              videoSource: video ?? videoUrl!,
+              audioSource: audio ?? audioUrl,
+              qualityCode: currentVideoQa.value?.code,
             ),
       seekTo: seek,
       duration: data.timeLength == null
@@ -948,7 +954,25 @@ class VideoDetailController extends GetxController
       AudioItem? firstAudio;
       final audioList = data.dash?.audio;
       if (audioList != null && audioList.isNotEmpty) {
-        final List<int> audioIds = audioList.map((map) => map.id!).toList();
+        final useAndroidHdrAudioCompat =
+            Platform.isAndroid &&
+            plPlayerController.shouldUseAndroidHdrForCurrentSource(
+              currentVideoQa.value?.code,
+            );
+        final effectiveAudioList = useAndroidHdrAudioCompat
+            ? audioList
+                  .where(
+                    (item) =>
+                        item.id != AudioQuality.hiRes.code &&
+                        item.id != AudioQuality.dolby_30250.code &&
+                        item.id != AudioQuality.dolby_30255.code,
+                  )
+                  .toList()
+            : audioList;
+        final List<int> audioIds =
+            (effectiveAudioList.isEmpty ? audioList : effectiveAudioList)
+                .map((map) => map.id!)
+                .toList();
         int closestNumber = audioIds.findClosestTarget(
           (e) => e <= plPlayerController.cacheAudioQa,
           (a, b) => a > b ? a : b,
@@ -957,10 +981,14 @@ class VideoDetailController extends GetxController
             audioIds.any((e) => e > plPlayerController.cacheAudioQa)) {
           closestNumber = AudioQuality.k192.code;
         }
-        firstAudio = audioList.firstWhere(
-          (e) => e.id == closestNumber,
-          orElse: () => audioList.first,
-        );
+        firstAudio =
+            (effectiveAudioList.isEmpty ? audioList : effectiveAudioList)
+                .firstWhere(
+                  (e) => e.id == closestNumber,
+                  orElse: () => effectiveAudioList.isEmpty
+                      ? audioList.first
+                      : effectiveAudioList.first,
+                );
         audioUrl = VideoUtils.getCdnUrl(firstAudio.playUrls, isAudio: true);
         if (firstAudio.id case final int id?) {
           currentAudioQa = AudioQuality.fromCode(id);
@@ -1026,7 +1054,8 @@ class VideoDetailController extends GetxController
   // 设定字幕轨道
   Future<void> setSubtitle(int index) async {
     if (index <= 0) {
-      await plPlayerController.videoPlayerController?.setSubtitleTrack(.no());
+      await plPlayerController.setSubtitleTrack(SubtitleTrack.no());
+      plPlayerController.setExternalSubtitleData(null);
       vttSubtitlesIndex.value = index;
       return;
     }
@@ -1036,11 +1065,22 @@ class VideoDetailController extends GetxController
 
       String subUri = subtitle.id;
       if (subtitle.isData) {
-        subUri = 'memory://$subUri';
+        if (plPlayerController.isAndroidHdrBackend) {
+          // ExoPlayer cannot read mpv's memory:// URI. Write the VTT to a
+          // temp file; the Dart side renders the timed text overlay.
+          subUri = path.join(tmpDirPath, '${cid.value}-${sub.lan}.vtt');
+          final file = File(subUri);
+          if (!file.existsSync()) {
+            await file.writeAsString(subtitle.id);
+          }
+        } else {
+          subUri = 'memory://$subUri';
+        }
       }
-      await plPlayerController.videoPlayerController?.setSubtitleTrack(
+      await plPlayerController.setSubtitleTrack(
         SubtitleTrack(subUri, sub.lanDoc, sub.lan, uri: true),
       );
+      plPlayerController.setExternalSubtitleData(subtitle.id);
       vttSubtitlesIndex.value = index;
     }
 
